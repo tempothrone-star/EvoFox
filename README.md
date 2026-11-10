@@ -1,8 +1,8 @@
 # EvoFox Blaze Linux investigation
 
-This repository contains an EvoFox Blaze Gaming Mouse Windows installer, **not source code**. The Linux port is not complete. The current application includes **experimental polling-rate, enabled DPI-stage and native-button read/change/restore** for the exact Blaze revision and descriptor reported by the user. Macros, lighting, physical DPI values and profiles are not implemented. Polling control uses independently developed, hardware-exercised research but has not been tested on this user’s physical mouse; an interrupted or incompatible operation could alter settings or make the mouse unusable.
+This repository contains an EvoFox Blaze Gaming Mouse Windows installer, **not source code**. The Linux port is not complete. The current application includes **experimental polling-rate, enabled DPI-stage and native-button read/change/restore** for the exact Blaze revision and descriptor reported by the user. Macros, saved lighting settings, physical DPI values and profiles are not implemented. Two fixed experimental live-lighting requests are available, without backup or restore. Polling control uses independently developed, hardware-exercised research but has not been tested on this user’s physical mouse; an interrupted or incompatible operation could alter settings or make the mouse unusable.
 
-The Linux desktop includes a device inspector and limited experimental Performance and Buttons tabs. It starts without contacting a device. The separately confirmed Performance operations do send HID feature requests, and Apply and Restore write settings. The original Windows installer is extracted locally as reference data; it is not executable Linux source code.
+The Linux desktop includes a device inspector and limited experimental Performance, Buttons and Lighting tabs. It starts without contacting a device. The separately confirmed Performance operations do send HID feature requests, and Apply and Restore write settings. The original Windows installer is extracted locally as reference data; it is not executable Linux source code.
 
 ## Launch the desktop window
 
@@ -23,6 +23,10 @@ Performance operations need read **and write** access to the selected hidraw nod
 ## Experimental native buttons
 
 The **Buttons** tab reads a fixed eight-byte button block, shows raw slot values and tentative action labels, and permits assigning a selected supported native slot to a built-in action. Vendor UI positions are **not verified physical-button locations**. Slot 7 is not a mapped button, slot 9 is outside this block and unsupported, and macro/shortcut extension records are not edited. The backend requires at least one standard slot to retain Left Click. Like polling, reads send SET_FEATURE staging, and a write uses fresh reads, a durable partial backup (`button-backup.json`) and readback. Back/Forward was exercised on another matching mouse; other actions and behavior on this mouse are not yet verified. A reconnect may be necessary. Restore requires an explicit backup file and refuses intervening edits. Do not assume the partial backup covers the whole device.
+
+## Experimental live lighting requests
+
+The **Lighting** tab sends one of two fixed feature reports described by independent [Aurora protocol research](https://github.com/rugbedbugg/aurora/blob/main/docs/protocol.txt): light-on effect or light-off effect. These are experimental **device writes**, not settings previews drawn only on screen. There is no original-lighting backup, readback, automatic restore, retry or reset. The source describes these frames as live-only and reports that a power cycle restored the stored effect on another mouse, but neither behavior nor persistence is verified on this mouse. Use only after the confirmation prompt and only if willing to accept that the lighting might not return to its previous state. No request is sent on startup. The exact descriptor and USB revision must match; each request is journaled under the same evidence directory as other operations. Color, brightness, other effects and saved lighting are not implemented.
 
 ## Command-line inspection
 

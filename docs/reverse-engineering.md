@@ -40,3 +40,7 @@ The user successfully ran the staged base-0018 read and supplied a screenshot sh
 The user reported a staged button block read of `21 22 23 24 25 26 00 26`. This confirms a response for base 0008 on this device, not the physical mapping of slots or behavior of remaps. Slot 7 is outside the supported mapped-slot set and the eighth vendor UI button maps to slot 9, outside this block; no write to slot 9 is implemented.
 
 The Performance tab can select an already-enabled DPI stage using the independently sourced fixed-block backend. Stage changes have offline tests only, have not been tried on this mouse, and do not set or measure physical DPI values. The backend reads the same block again before any change, saves a partial backup, commits and checks readback; no automatic activation or recovery is sent.
+
+## Limited live-lighting research
+
+Two literal command-13 frames and their candidate meanings are documented by [Aurora's protocol notes](https://github.com/rugbedbugg/aurora/blob/main/docs/protocol.txt). The Lighting tab can send one of these fixed frames after confirmation and exact baseline/handle validation, with an intent journal and no retry. It does not implement configurable frame encoding, lighting backup, readback, or restoration. Aurora describes them as live-only and reports a power-cycle test on another mouse; neither persistence nor behavior is verified on this specific GM862. The test suite uses mocked ioctls and does not establish hardware behavior.

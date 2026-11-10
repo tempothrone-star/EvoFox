@@ -19,6 +19,13 @@ def config_sections(config):
     return sections
 
 
+def parse_polling_choice(value):
+    """Never interpret an empty or unknown target as the current setting."""
+    if value not in ('125', '250', '500', '1000'):
+        raise ValueError('Select a target polling rate first.')
+    return int(value)
+
+
 def run():
     try:
         import tkinter as tk
@@ -54,7 +61,7 @@ def run():
     outer.pack(fill='both', expand=True)
     ttk.Label(outer, text='EvoFox Blaze', style='Title.TLabel').pack(anchor='w')
     ttk.Label(outer, text='Linux desktop · experimental device controls').pack(anchor='w', pady=(2, 8))
-    ttk.Label(outer, text='Polling, DPI stage and basic button controls are experimental. Lighting and macros are not implemented.',
+    ttk.Label(outer, text='Polling, DPI stage, buttons and limited live lighting are experimental. Macros are not implemented.',
               style='Notice.TLabel', wraplength=860).pack(anchor='w', pady=(0, 12))
 
     if os.geteuid() == 0:
@@ -67,9 +74,11 @@ def run():
     config_tab = ttk.Frame(tabs, padding=12)
     performance_tab = ttk.Frame(tabs, padding=12)
     buttons_tab = ttk.Frame(tabs, padding=12)
+    lighting_tab = ttk.Frame(tabs, padding=12)
     tabs.add(devices_tab, text='Devices')
     tabs.add(buttons_tab, text='Buttons')
     tabs.add(performance_tab, text='Performance')
+    tabs.add(lighting_tab, text='Lighting')
     tabs.add(config_tab, text='Configuration file')
 
     ttk.Label(devices_tab, text='HID interfaces on this computer', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
@@ -128,6 +137,7 @@ def run():
         candidates = [d['node'] for d in devices if d['interface_hint'] == 'candidate feature-report interface']
         candidate_box['values'] = candidates
         button_device_box['values'] = candidates
+        lighting_device_box['values'] = candidates
         if selected_node.get() not in candidates:
             selected_node.set(candidates[0] if len(candidates) == 1 else '')
         device_status.set(f'{len(devices)} HID interface(s) found. Hints are not model verification.')
@@ -184,9 +194,9 @@ def run():
     rate_row = ttk.Frame(performance_tab)
     rate_row.pack(fill='x', pady=8)
     ttk.Label(rate_row, text='Target polling rate:').pack(side='left', padx=(0, 8))
-    selected_rate = tk.StringVar(value='500')
+    selected_rate = tk.StringVar(value='')
     ttk.Combobox(rate_row, state='readonly', textvariable=selected_rate, values=('125', '250', '500', '1000'), width=10).pack(side='left')
-    ttk.Label(rate_row, text='Hz (frequency is not independently measured)').pack(side='left', padx=8)
+    ttk.Label(rate_row, text='Hz (choose target; not a current reading)').pack(side='left', padx=8)
     stage_row = ttk.Frame(performance_tab)
     stage_row.pack(fill='x', pady=8)
     ttk.Label(stage_row, text='Enabled DPI stage:').pack(side='left', padx=(0, 8))
@@ -216,6 +226,13 @@ def run():
             return
         backup = None
         dpi_stage = None
+        rate = None
+        if action == 'polling':
+            try:
+                rate = parse_polling_choice(selected_rate.get())
+            except ValueError as exc:
+                messagebox.showerror('Choose a polling rate', str(exc), parent=root)
+                return
         if action == 'dpi-stage':
             options = {f'Stage {i + 1} (index {i})': i for i in enabled_stages}
             if stage_read_node != node or stage_var.get() not in options:
@@ -238,7 +255,6 @@ def run():
                 f"{warnings[action]}\n\nConfirm {node} is your EvoFox Blaze GM862. Close all other mouse configuration tools. "
                 'Do not unplug while the operation runs. Continue?', parent=root):
             return
-        rate = int(selected_rate.get()) if action == 'polling' else None
         invalidate_stages()
         perf_status.set(f'Working on {node}. Keep the mouse connected…')
         def completed(result, error):
@@ -368,6 +384,56 @@ def run():
         operation_buttons.append(button)
     ttk.Label(buttons_tab, text='All operations require confirmation. Reads send SET_FEATURE staging. Backups cover one 8-byte block only. '
               'No automatic retry, rollback or activation.', wraplength=800, style='Notice.TLabel').pack(anchor='w', pady=4)
+
+    ttk.Label(lighting_tab, text='Live lighting preview · experimental', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
+    ttk.Label(lighting_tab, text='Only two fixed live-effect requests are available. Color, brightness, saved lighting settings and macros cannot be configured here.',
+              wraplength=800).pack(anchor='w', pady=(5, 12))
+    light_device_row = ttk.Frame(lighting_tab)
+    light_device_row.pack(fill='x')
+    ttk.Label(light_device_row, text='Feature interface:').pack(side='left', padx=(0, 8))
+    lighting_device_box = ttk.Combobox(light_device_row, state='readonly', textvariable=selected_node, width=22)
+    lighting_device_box.pack(side='left')
+    ttk.Label(light_device_row, text='Shared with Performance and Buttons.').pack(side='left', padx=10)
+    light_row = ttk.Frame(lighting_tab)
+    light_row.pack(fill='x', pady=12)
+    ttk.Label(light_row, text='Request:').pack(side='left', padx=(0, 8))
+    light_var = tk.StringVar()
+    light_options = {'Light-on effect': 'light-on', 'Light-off effect': 'light-off'}
+    ttk.Combobox(light_row, state='readonly', textvariable=light_var, values=tuple(light_options), width=20).pack(side='left')
+    light_message = tk.StringVar(value='No request sent. The original lighting state is not read or backed up.')
+    ttk.Label(lighting_tab, textvariable=light_message, wraplength=800, justify='left').pack(anchor='w', pady=(8, 0))
+
+    def preview_lighting():
+        nonlocal last_button_read_node
+        node = selected_node.get()
+        mode = light_options.get(light_var.get())
+        if not node or not mode:
+            messagebox.showerror('Choose device and effect', 'Select a candidate interface and one of the two live effects.', parent=root)
+            return
+        if not messagebox.askyesno('Experimental live-lighting request',
+                f"Send a single {light_var.get()} SET_FEATURE request to {node}?\n\n"
+                'This has not been tested on your mouse. No original lighting backup, readback, or automatic restore is available. '
+                'It may change lighting unexpectedly or persist. A power cycle restored lighting on another device, but that is not guaranteed here.\n\n'
+                'Confirm this is your EvoFox Blaze GM862, close other mouse tools and keep the mouse connected. Continue?', parent=root):
+            return
+        invalidate_stages()
+        last_button_read_node = None
+        light_message.set(f'Sending one request to {node}. Keep the mouse connected…')
+        def completed(result, error):
+            if error:
+                light_message.set('Request failed. Lighting state may be uncertain; do not retry blindly. Inspect the evidence.')
+                messagebox.showerror('Lighting request failed', error, parent=root)
+                return
+            payload, capture = result
+            light_message.set(f"Request sent: {payload.get('mode', 'unknown')}. Physical behavior and persistence are not verified.\n"
+                              f"No backup or restore is available. Evidence: {capture}")
+        start_task(lambda: run_operation('lighting', node, light_mode=mode), completed)
+
+    light_button = ttk.Button(lighting_tab, text='Send live effect…', command=preview_lighting)
+    light_button.pack(anchor='w', pady=(12, 8))
+    operation_buttons.append(light_button)
+    ttk.Label(lighting_tab, text='No lighting request is sent at startup. The request requires confirmation and has no automatic retry, reset or rollback.',
+              wraplength=800, style='Notice.TLabel').pack(anchor='w')
 
     cfg_path = tk.StringVar(value='No configuration file loaded')
     cfg_section = tk.StringVar()

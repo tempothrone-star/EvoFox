@@ -80,6 +80,13 @@ class DevicesTests(unittest.TestCase):
 
 
 class GuiModelTests(unittest.TestCase):
+    def test_polling_target_must_be_explicit(self):
+        from evofox.gui import parse_polling_choice
+        for invalid in ('', '300', '1000 Hz', None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                parse_polling_choice(invalid)
+        self.assertEqual(parse_polling_choice('1000'), 1000)
+
     def test_config_sections_include_unnamed_profile_and_shared_values(self):
         from evofox.gui import config_sections
         sections = dict(config_sections({'product': 'Test', 'initialization': {},

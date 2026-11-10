@@ -20,9 +20,11 @@ def state_root():
     return (Path(state) if state and Path(state).is_absolute() else Path.home() / '.local/state') / 'evofox-blaze'
 
 
-def build_command(action, node, capture, *, rate=None, backup=None, slot=None, button_action=None, dpi_stage=None):
+def build_command(action, node, capture, *, rate=None, backup=None, slot=None, button_action=None, dpi_stage=None, light_mode=None):
     if not re.fullmatch(r'/dev/hidraw[0-9]+', str(node)):
         raise ValueError('Select a /dev/hidrawN candidate interface')
+    if action != 'lighting' and light_mode is not None:
+        raise ValueError('Lighting mode is not valid for this operation')
     if action != 'dpi-stage' and dpi_stage is not None:
         raise ValueError('DPI stage is not valid for this operation')
     if action == 'read' and rate is None and backup is None and slot is None and button_action is None:
@@ -41,18 +43,23 @@ def build_command(action, node, capture, *, rate=None, backup=None, slot=None, b
         arguments = ['evofox_blaze.button_write', '--assign', f'{slot}={button_action}', '--accept-write-risk']
     elif action == 'button-restore' and rate is None and isinstance(backup, Path) and slot is None and button_action is None:
         arguments = ['evofox_blaze.button_write', '--restore-backup', str(backup), '--accept-write-risk']
+    elif (action == 'lighting' and rate is None and backup is None and slot is None
+          and button_action is None and dpi_stage is None and light_mode in ('light-on', 'light-off')):
+        # These are the only two literal live-preview frames; no configurable raw writes.
+        arguments = ['evofox.lighting', '--mode', light_mode, '--accept-live-lighting-risk']
+        return [sys.executable, '-m', *arguments, '--device', str(node), '--capture', str(capture)]
     else:
         raise ValueError('Invalid operation or setting')
     return [sys.executable, '-m', *arguments, '--device', str(node), '--baseline', str(BASELINE), '--capture', str(capture)]
 
 
-def run_operation(action, node, *, rate=None, backup=None, slot=None, button_action=None, dpi_stage=None):
+def run_operation(action, node, *, rate=None, backup=None, slot=None, button_action=None, dpi_stage=None, light_mode=None):
     """Run a fixed backend operation once, preserving its journal on failure."""
     root = state_root()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
     capture = root / f'{stamp}-{action}-{uuid4().hex[:8]}'
-    command = build_command(action, node, capture, rate=rate, backup=backup, slot=slot, button_action=button_action, dpi_stage=dpi_stage)
+    command = build_command(action, node, capture, rate=rate, backup=backup, slot=slot, button_action=button_action, dpi_stage=dpi_stage, light_mode=light_mode)
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
     if result.returncode:
         raise RuntimeError(f'{result.stderr.strip() or "Operation failed."}\nEvidence location: {capture}\n'
