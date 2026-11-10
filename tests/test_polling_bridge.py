@@ -17,6 +17,10 @@ class PollingBridgeTests(unittest.TestCase):
         self.assertIn('--accept-write-risk', write)
         self.assertIn('--polling', write)
         self.assertNotIn('--accept-activation-risk', write)
+        stage = build_command('dpi-stage', '/dev/hidraw2', Path('/tmp/capture'), dpi_stage=4)
+        self.assertEqual(stage[stage.index('--dpi-stage') + 1], '4')
+        self.assertIn('--accept-write-risk', stage)
+        self.assertNotIn('--accept-activation-risk', stage)
         restore = build_command('restore', '/dev/hidraw2', Path('/tmp/capture'), backup=Path('/tmp/original-state.json'))
         self.assertIn('--restore-backup', restore)
         read_buttons = build_command('button-read', '/dev/hidraw2', Path('/tmp/capture'))
@@ -30,7 +34,11 @@ class PollingBridgeTests(unittest.TestCase):
                        {'action':'polling','node':'/dev/input/event0','rate': 500},
                        {'action':'read','node':'/dev/hidraw2','rate': 125},
                        {'action':'button-assign','node':'/dev/hidraw2','slot': 9,'button_action':'back'},
-                       {'action':'button-assign','node':'/dev/hidraw2','slot': 4,'button_action':'arbitrary'}):
+                       {'action':'button-assign','node':'/dev/hidraw2','slot': 4,'button_action':'arbitrary'},
+                       {'action':'dpi-stage','node':'/dev/hidraw2','dpi_stage': True},
+                       {'action':'dpi-stage','node':'/dev/hidraw2','dpi_stage': 6},
+                       {'action':'dpi-stage','node':'/dev/hidraw2','dpi_stage': 1,'rate': 500},
+                       {'action':'read','node':'/dev/hidraw2','dpi_stage': 1}):
             with self.assertRaises(ValueError):
                 build_command(capture=Path('/tmp/capture'), **kwargs)
 
@@ -38,6 +46,14 @@ class PollingBridgeTests(unittest.TestCase):
         data = bytes.fromhex('19 3f 32 00 f3 ff 00 00')
         self.assertEqual(plan_change(data, 'polling', 1000), data)
         self.assertEqual(plan_change(data, 'polling', 500)[6], 1)
+
+    def test_user_stage_preserves_other_bytes_and_refuses_disabled(self):
+        data = bytes.fromhex('19 3f 32 00 f3 ff 00 00')
+        self.assertEqual(plan_change(data, 'dpi-stage', 1), data)
+        changed = plan_change(data, 'dpi-stage', 4)
+        self.assertEqual(changed, bytes.fromhex('1c 3f 32 00 f3 ff 00 00'))
+        with self.assertRaises(ValueError):
+            plan_change(bytes.fromhex('19 02 32 00 f3 ff 00 00'), 'dpi-stage', 4)
 
     def test_backend_success_and_failure_preserve_evidence_location(self):
         with tempfile.TemporaryDirectory() as tmp, patch('evofox.polling.state_root', return_value=Path(tmp)):

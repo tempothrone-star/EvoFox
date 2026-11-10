@@ -34,3 +34,9 @@ The supplied installer was extracted locally with innoextract. Its 132 files, in
 ## User staged state read
 
 The user successfully ran the staged base-0018 read and supplied a screenshot showing `19 3f 32 00 f3 ff 00 00`. The candidate polling code is 0 (1000 Hz), and DPI stage index is 1; neither frequency nor behavior was measured. The screenshot showed evidence under `/root/.local/state`, indicating the GUI was likely launched as root. Prefer running the GUI as the normal user with temporary access only to the identified hidraw interface. No setting change is demonstrated by this read.
+
+## User staged button read
+
+The user reported a staged button block read of `21 22 23 24 25 26 00 26`. This confirms a response for base 0008 on this device, not the physical mapping of slots or behavior of remaps. Slot 7 is outside the supported mapped-slot set and the eighth vendor UI button maps to slot 9, outside this block; no write to slot 9 is implemented.
+
+The Performance tab can select an already-enabled DPI stage using the independently sourced fixed-block backend. Stage changes have offline tests only, have not been tried on this mouse, and do not set or measure physical DPI values. The backend reads the same block again before any change, saves a partial backup, commits and checks readback; no automatic activation or recovery is sent.

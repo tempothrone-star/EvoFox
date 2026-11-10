@@ -1,4 +1,4 @@
-"""Native, read-only desktop inspector for EvoFox Blaze driver resources."""
+"""Native Linux EvoFox inspector and experimental device controls."""
 import argparse
 import os
 import queue
@@ -53,8 +53,8 @@ def run():
     outer = ttk.Frame(root, padding=16)
     outer.pack(fill='both', expand=True)
     ttk.Label(outer, text='EvoFox Blaze', style='Title.TLabel').pack(anchor='w')
-    ttk.Label(outer, text='Linux desktop · experimental polling control').pack(anchor='w', pady=(2, 8))
-    ttk.Label(outer, text='Polling and basic button controls are experimental. Lighting and macros are not implemented.',
+    ttk.Label(outer, text='Linux desktop · experimental device controls').pack(anchor='w', pady=(2, 8))
+    ttk.Label(outer, text='Polling, DPI stage and basic button controls are experimental. Lighting and macros are not implemented.',
               style='Notice.TLabel', wraplength=860).pack(anchor='w', pady=(0, 12))
 
     if os.geteuid() == 0:
@@ -171,7 +171,7 @@ def run():
     status_button.pack(side='right')
     operation_buttons.append(status_button)
 
-    ttk.Label(performance_tab, text='Polling rate · experimental', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
+    ttk.Label(performance_tab, text='Performance · experimental', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
     ttk.Label(performance_tab, text='Only USB 30fa:1440 revision 0100 with the exact known interface descriptor is supported. '
               'Each operation requires confirmation. Close other mouse tools first.', wraplength=780).pack(anchor='w', pady=(5, 12))
     device_row = ttk.Frame(performance_tab)
@@ -187,17 +187,41 @@ def run():
     selected_rate = tk.StringVar(value='500')
     ttk.Combobox(rate_row, state='readonly', textvariable=selected_rate, values=('125', '250', '500', '1000'), width=10).pack(side='left')
     ttk.Label(rate_row, text='Hz (frequency is not independently measured)').pack(side='left', padx=8)
+    stage_row = ttk.Frame(performance_tab)
+    stage_row.pack(fill='x', pady=8)
+    ttk.Label(stage_row, text='Enabled DPI stage:').pack(side='left', padx=(0, 8))
+    stage_var = tk.StringVar()
+    stage_box = ttk.Combobox(stage_row, state='readonly', textvariable=stage_var, width=19)
+    stage_box.pack(side='left')
+    ttk.Label(stage_row, text='Read state first. Stage index is not a DPI value.').pack(side='left', padx=8)
+    stage_read_node = None
+    enabled_stages = ()
+    def invalidate_stages(*_):
+        nonlocal stage_read_node, enabled_stages
+        stage_read_node = None
+        enabled_stages = ()
+        stage_box['values'] = ()
+        stage_var.set('')
+    selected_node.trace_add('write', invalidate_stages)
     perf_status = tk.StringVar(value='No operation performed. The mouse is not contacted at startup.')
     ttk.Label(performance_tab, textvariable=perf_status, wraplength=780, justify='left').pack(anchor='w', pady=12)
     perf_controls = ttk.Frame(performance_tab)
     perf_controls.pack(anchor='w', pady=8)
 
     def perform_polling(action):
+        nonlocal stage_read_node, enabled_stages
         node = selected_node.get()
         if not node:
             messagebox.showerror('Select an interface', 'Refresh devices and choose the candidate feature interface.', parent=root)
             return
         backup = None
+        dpi_stage = None
+        if action == 'dpi-stage':
+            options = {f'Stage {i + 1} (index {i})': i for i in enabled_stages}
+            if stage_read_node != node or stage_var.get() not in options:
+                messagebox.showerror('Read state first', 'Read the selected mouse state, then choose an enabled stage.', parent=root)
+                return
+            dpi_stage = options[stage_var.get()]
         if action == 'restore':
             path = filedialog.askopenfilename(parent=root, title='Select original-state.json backup',
                                               filetypes=[('JSON backup', '*.json'), ('All files', '*')])
@@ -207,6 +231,7 @@ def run():
         warnings = {
             'read': 'A staged eight-byte read sends SET_FEATURE and GET_FEATURE requests, even though it does not commit a setting. Effects are experimental.',
             'polling': f'This will commit a polling setting of {selected_rate.get()} Hz. The backend makes a partial 8-byte backup and checks readback; it cannot guarantee recovery or measured frequency.',
+            'dpi-stage': f'This will select DPI stage index {dpi_stage}, not change its DPI value. The backend makes a partial 8-byte backup and checks readback; behavior on this mouse has not been verified.',
             'restore': 'This will attempt to restore the selected partial backup. It will refuse intervening changes, but cannot guarantee recovery.'
         }
         if not messagebox.askyesno('Experimental device operation',
@@ -214,14 +239,26 @@ def run():
                 'Do not unplug while the operation runs. Continue?', parent=root):
             return
         rate = int(selected_rate.get()) if action == 'polling' else None
+        invalidate_stages()
         perf_status.set(f'Working on {node}. Keep the mouse connected…')
         def completed(result, error):
+            nonlocal stage_read_node, enabled_stages
             if error:
                 perf_status.set('Operation failed. Device state may be uncertain; do not retry blindly. See the error and journal.')
                 messagebox.showerror('Device operation failed', error, parent=root)
                 return
             payload, capture = result
             if action == 'read':
+                stages = payload.get('enabled_stage_indices_candidate')
+                if (selected_node.get() == node and isinstance(stages, list)
+                        and all(type(i) is int and 0 <= i <= 5 for i in stages)
+                        and len(set(stages)) == len(stages)):
+                    enabled_stages = tuple(sorted(stages))
+                    stage_read_node = node
+                    stage_box['values'] = tuple(f'Stage {i + 1} (index {i})' for i in enabled_stages)
+                    current = payload.get('dpi_stage_selector_candidate')
+                    if type(current) is int and current in enabled_stages:
+                        stage_var.set(f'Stage {current + 1} (index {current})')
                 text = (f"Read block: {payload.get('collected_hex', 'unknown')}\n"
                         f"Candidate polling: {payload.get('polling_hz_candidate', 'unknown')} Hz; "
                         f"DPI stage index: {payload.get('dpi_stage_selector_candidate', 'unknown')}.")
@@ -231,9 +268,9 @@ def run():
                 if payload.get('backup_file'):
                     text += f"\nPartial backup: {capture / payload['backup_file']}"
             perf_status.set(text + f'\nEvidence: {capture}')
-        start_task(lambda: run_operation(action, node, rate=rate, backup=backup), completed)
+        start_task(lambda: run_operation(action, node, rate=rate, backup=backup, dpi_stage=dpi_stage), completed)
 
-    for label, action in [('Read mouse state…', 'read'), ('Apply polling…', 'polling'), ('Restore block backup…', 'restore')]:
+    for label, action in [('Read mouse state…', 'read'), ('Apply polling…', 'polling'), ('Apply DPI stage…', 'dpi-stage'), ('Restore block backup…', 'restore')]:
         button = ttk.Button(perf_controls, text=label, command=lambda a=action: perform_polling(a))
         button.pack(side='left', padx=(0, 8))
         operation_buttons.append(button)

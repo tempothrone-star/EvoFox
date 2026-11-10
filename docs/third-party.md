@@ -6,7 +6,7 @@ fixtures and the button-related tests are from [Evofox-Blaze-Linux-Port](https:/
 commit `7252a49b5b4f8b595a5aaa55418c99e5826a1d96`. Copyright 2026 R Rahul;
 MIT license included at `evofox_blaze/LICENSE`.
 
-The GUI exposes the fixed-block polling and native-button read/change/restore workflows.
+The GUI exposes the fixed-block polling, enabled DPI-stage, and native-button read/change/restore workflows.
 The backend matches USB ID, revision, interface and the *entire* report
  descriptor against the captured baseline; it locks the device cooperatively,
 journals operations, backs up the affected eight bytes before a commit and
