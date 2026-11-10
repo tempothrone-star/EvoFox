@@ -36,12 +36,14 @@ class StatusTests(unittest.TestCase):
         self.fstat = patch('evofox.status.os.fstat').start()
         self.fstat.return_value.st_mode = stat.S_IFCHR
         self.mock_ioctl = patch('evofox.status.fcntl.ioctl', side_effect=self.ioctl).start()
+        self.flock = patch('evofox.status.fcntl.flock').start()
         self.addCleanup(patch.stopall)
 
     def test_status_only_gets_one_report(self):
         result = get_status('/dev/hidraw2', confirmed=True)
         self.assertEqual(result.hex(), '070062091000236b')
         self.assertEqual(self.calls, [HIDIOCGRAWINFO, HIDIOCGRDESCSIZE, HIDIOCGRDESC, HIDIOCGFEATURE])
+        self.flock.assert_called_once()
         self.assertEqual(self.open.call_args.args[1] & os.O_ACCMODE, os.O_RDONLY)
         self.close.assert_called_once_with(42)
 

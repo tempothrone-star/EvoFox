@@ -1,0 +1,14 @@
+#!/bin/sh
+# Extract the user's own installer locally; never silently overwrite old files.
+set -eu
+cd "$(dirname "$0")"
+if ! command -v innoextract >/dev/null 2>&1; then
+    echo 'Install innoextract first (e.g. sudo apt install innoextract).' >&2
+    exit 1
+fi
+if [ -e extracted ]; then
+    echo 'extracted/ already exists; move it aside before extracting again.' >&2
+    exit 1
+fi
+mkdir extracted
+exec innoextract -d extracted evofox.exe

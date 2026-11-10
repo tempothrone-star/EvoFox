@@ -58,6 +58,9 @@ def get_status(node, *, confirmed=False):
     try:
         if not stat.S_ISCHR(os.fstat(fd).st_mode):
             raise ValueError('selected path is not a character device')
+        # Share the backend's cooperative lock so our own GUI/CLI tools do not
+        # interleave status reads with staged reads or configuration writes.
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         info = bytearray(8)
         fcntl.ioctl(fd, HIDIOCGRAWINFO, info)
         bus, vendor, product = struct.unpack('=IHH', info)

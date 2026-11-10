@@ -1,8 +1,8 @@
 # EvoFox Blaze Linux investigation
 
-This repository contains an EvoFox Blaze Gaming Mouse Windows installer, **not source code**. The Linux port is not complete. In particular, there is currently **no device configuration, macro recording, lighting control, or working mouse-control GUI**. Do not expect changes to the mouse from these tools. The USB feature-report protocol has not yet been verified against this physical mouse; sending guessed commands could alter device settings or make a mouse unusable.
+This repository contains an EvoFox Blaze Gaming Mouse Windows installer, **not source code**. The Linux port is not complete. The current application includes **experimental polling-rate read/change/restore** for the exact Blaze revision and descriptor reported by the user. Button remapping, macros, lighting, DPI values and profiles are not implemented. Polling control uses independently developed, hardware-exercised research but has not been tested on this user’s physical mouse; an interrupted or incompatible operation could alter settings or make the mouse unusable.
 
-The current native Linux program is a **read-only desktop inspector**, not yet a mouse configuration application. It lists HID interfaces through sysfs and displays the Windows driver's extracted configuration without changing it or opening a device node.
+The Linux desktop includes a device inspector and a limited experimental Performance tab. It starts without contacting a device. The separately confirmed Performance operations do send HID feature requests, and Apply and Restore write settings. The original Windows installer is extracted locally as reference data; it is not executable Linux source code.
 
 ## Launch the desktop window
 
@@ -12,7 +12,13 @@ Install Python 3 and Tkinter (for example, `sudo apt install python3 python3-tk`
 ./evofox-desktop
 ```
 
-Use **Refresh devices** to list HID interfaces. You can select the candidate feature-report interface and use **Read status…** to send an optional experimental GET_FEATURE request after confirmation (see the precautions below). To inspect the vendor settings, extract the installer as described below and choose **Open config.ini…** in the Configuration file tab, or launch `./evofox-desktop extracted/app/skins/config/config.ini`. This window cannot apply settings to the mouse.
+Use **Refresh devices** to list HID interfaces. You can select the candidate feature-report interface and use **Read status…** to send an optional experimental GET_FEATURE request after confirmation (see the precautions below). To inspect the vendor settings, extract the installer as described below and choose **Open config.ini…** in the Configuration file tab, or launch `./evofox-desktop extracted/app/skins/config/config.ini`. The **Performance** tab provides explicit staged reads, polling changes, and scoped backup restore. See the safety notes below.
+
+## Experimental polling control
+
+The Performance tab targets only USB `30fa:1440`, revision `0100`, interface `01` and the exact descriptor in the bundled research baseline. Choose the candidate interface and explicitly confirm each operation. The **Read mouse state** operation sends SET_FEATURE staging requests as well as GET_FEATURE requests; it is not a passive read. **Apply polling** reads the eight-byte block, saves a durable partial backup, writes the block and checks readback. **Restore block backup** accepts an earlier `original-state.json` and refuses intervening changes. Backups cover only the affected block, not the entire mouse. Settings readback does not prove actual frequency or immediate activation; reconnecting may be required. There is no automatic retry or rollback. Close other configuration tools first; do not unplug the mouse during an operation. On failure, inspect the evidence path shown in the UI before taking further action. Evidence and partial backups are saved under `$XDG_STATE_HOME/evofox-blaze` or `~/.local/state/evofox-blaze`.
+
+Performance operations need read **and write** access to the selected hidraw node. If needed, on systems with `setfacl`, temporarily grant only your user access to the confirmed candidate node (replace `N`): `sudo setfacl -m u:$(id -un):rw /dev/hidrawN`. This usually disappears on reconnect. Do not run the graphical program as root, and do not grant access to unrelated HID devices. Other applications do not necessarily honor the backend's cooperative lock. The backend currently supports Linux x86-64 and Python 3.10+ only. See [third-party attribution](docs/third-party.md) and [investigation notes](docs/reverse-engineering.md).
 
 ## Command-line inspection
 
@@ -41,12 +47,11 @@ The tool validates the opened character device's USB ID and report descriptor be
 
 ## Extracting the installer
 
-Install `innoextract` using your Linux distribution's package manager, then:
+Install `innoextract` using your Linux distribution's package manager, then run:
 
 ```sh
-mkdir -p extracted
-innoextract -d extracted evofox.exe
+./extract-evofox
 python3 -m evofox config extracted/app/skins/config/config.ini
 ```
 
-Keep extracted files out of the repository. See [the investigation notes](docs/reverse-engineering.md) for evidence, limitations, and what is needed to finish a safe port.
+The script refuses to overwrite an existing `extracted/` directory. The desktop automatically loads the extracted `config.ini` when present. Extracted vendor files are kept out of Git; extracting does not convert the Windows executable to Linux source. See [the investigation notes](docs/reverse-engineering.md) for evidence, limitations, and what is needed to finish a safe port.
