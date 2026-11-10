@@ -44,3 +44,5 @@ The Performance tab can select an already-enabled DPI stage using the independen
 ## Limited live-lighting research
 
 Two literal command-13 frames and their candidate meanings are documented by [Aurora's protocol notes](https://github.com/rugbedbugg/aurora/blob/main/docs/protocol.txt). The Lighting tab can send one of these fixed frames after confirmation and exact baseline/handle validation, with an intent journal and no retry. It does not implement configurable frame encoding, lighting backup, readback, or restoration. Aurora describes them as live-only and reports a power-cycle test on another mouse; neither persistence nor behavior is verified on this specific GM862. The test suite uses mocked ioctls and does not establish hardware behavior.
+
+The user subsequently reported that lighting was working with `light-on` selected and the GUI reporting `request-sent` on their GM862. This is a user-reported behavioral observation, not an independent measurement or a test of the light-off frame, other effects, persistence, or restoration after a power cycle.

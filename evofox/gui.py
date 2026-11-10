@@ -412,7 +412,7 @@ def run():
             return
         if not messagebox.askyesno('Experimental live-lighting request',
                 f"Send a single {light_var.get()} SET_FEATURE request to {node}?\n\n"
-                'This has not been tested on your mouse. No original lighting backup, readback, or automatic restore is available. '
+                'Light-on was reported working on one GM862; light-off and behavior on other devices remain unverified. No original lighting backup, readback, or automatic restore is available. '
                 'It may change lighting unexpectedly or persist. A power cycle restored lighting on another device, but that is not guaranteed here.\n\n'
                 'Confirm this is your EvoFox Blaze GM862, close other mouse tools and keep the mouse connected. Continue?', parent=root):
             return
