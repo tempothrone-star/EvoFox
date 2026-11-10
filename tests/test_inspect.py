@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from evofox.__main__ import inspect_config, main, read_ini, scan_hid
+from evofox.__main__ import FEATURE_COLLECTION, inspect_config, is_candidate, main, read_ini, scan_hid
 
 
 class ConfigTests(unittest.TestCase):
@@ -49,6 +49,28 @@ class DevicesTests(unittest.TestCase):
             self.assertEqual(result[0]['node'], '/dev/hidraw0')
             self.assertEqual(result[0]['vendor_id'], '1234')
             self.assertEqual(result[0]['product_id'], 'abcd')
+
+    def test_user_interfaces_and_default_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for n in range(3):
+                device = root / f'hidraw{n}' / 'device'
+                device.mkdir(parents=True)
+                vendor, product = ('30FA', '1440') if n < 2 else ('1234', '5678')
+                (device / 'uevent').write_text(
+                    f'HID_ID=0003:0000{vendor}:0000{product}\n'
+                    'HID_NAME=INSTANT USB Gaming Mouse\n')
+            (root / 'hidraw0/device/report_descriptor').write_bytes(bytes.fromhex('05 01 09 02'))
+            (root / 'hidraw1/device/report_descriptor').write_bytes(bytes.fromhex('05 01') + FEATURE_COLLECTION)
+            # An unrelated device with the same bytes must not be identified.
+            (root / 'hidraw2/device/report_descriptor').write_bytes(FEATURE_COLLECTION)
+            items = scan_hid(root)
+            self.assertEqual(items[0]['interface_hint'], 'candidate; no matching feature collection')
+            self.assertEqual(items[1]['interface_hint'], 'candidate feature-report interface')
+            self.assertEqual(items[2]['interface_hint'], 'other')
+            self.assertEqual([is_candidate(d) for d in items], [True, True, False])
+            (root / 'hidraw1/device/report_descriptor').unlink()
+            self.assertEqual(scan_hid(root)[1]['interface_hint'], 'candidate; descriptor unavailable')
 
     def test_main_devices_json(self):
         out = io.StringIO()

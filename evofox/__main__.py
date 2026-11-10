@@ -6,6 +6,31 @@ import sys
 from pathlib import Path
 
 
+# Feature collection supplied by the user for a 30fa:1440 interface.
+# This is a conservative fingerprint, not evidence that every matching
+# device has the same model or can safely accept the same commands.
+FEATURE_COLLECTION = bytes.fromhex(
+    '06 01 ff 09 01 a1 01 85 07 15 00 26 ff 00 '
+    '09 20 95 07 75 08 b1 02 c0'
+)
+
+
+def identify_interface(bus, vendor_id, product_id, descriptor):
+    if (bus, vendor_id, product_id) != ('0003', '30fa', '1440'):
+        return 'other'
+    if descriptor is None:
+        return 'candidate; descriptor unavailable'
+    if FEATURE_COLLECTION in descriptor:
+        return 'candidate feature-report interface'
+    return 'candidate; no matching feature collection'
+
+
+def is_candidate(device):
+    return ((device['bus'], device['vendor_id'], device['product_id']) ==
+            ('0003', '30fa', '1440') or
+            bool(re.search(r'evofox|blaze', device['name'], re.I)))
+
+
 def read_ini(path):
     """Read vendor INI data without rewriting it or interpreting device codes.
 
@@ -71,13 +96,21 @@ def scan_hid(sys_class=Path('/sys/class/hidraw')):
                     key, value = line.split('=', 1)
                     metadata[key] = value
             parts = metadata.get('HID_ID', '').split(':')
+            bus = parts[0].lower() if len(parts) == 3 else None
+            vendor = parts[1][-4:].lower() if len(parts) == 3 else None
+            product = parts[2][-4:].lower() if len(parts) == 3 else None
+            try:
+                descriptor = (entry / 'device' / 'report_descriptor').read_bytes()
+            except OSError:
+                descriptor = None
             found.append({'node': '/dev/' + entry.name,
                           'name': metadata.get('HID_NAME', ''),
-                          'bus': parts[0] if len(parts) == 3 else None,
-                          'vendor_id': parts[1][-4:].lower() if len(parts) == 3 else None,
-                          'product_id': parts[2][-4:].lower() if len(parts) == 3 else None,
+                          'bus': bus,
+                          'vendor_id': vendor,
+                          'product_id': product,
                           'physical_path': metadata.get('HID_PHYS', ''),
-                          'unique_id': metadata.get('HID_UNIQ', '')})
+                          'unique_id': metadata.get('HID_UNIQ', ''),
+                          'interface_hint': identify_interface(bus, vendor, product, descriptor)})
         except (OSError, UnicodeError):
             # A device can disappear while sysfs is being enumerated.
             continue
@@ -88,7 +121,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Read-only EvoFox Blaze investigation utilities')
     sub = parser.add_subparsers(dest='command', required=True)
     devices = sub.add_parser('devices', help='list Linux hidraw devices (no device I/O)')
-    devices.add_argument('--all', action='store_true', help='include devices without EvoFox or Blaze in their name')
+    devices.add_argument('--all', action='store_true', help='include all HID interfaces')
+    status = sub.add_parser('status', help='experimentally request one feature report from a confirmed mouse')
+    status.add_argument('--device', required=True, help='explicit /dev/hidrawN feature interface')
+    status.add_argument('--confirm-blaze', action='store_true', help='confirm that the selected mouse is an EvoFox Blaze')
     sub_config = sub.add_parser('config', help='inspect an extracted vendor config.ini')
     sub_config.add_argument('path', type=Path)
     args = parser.parse_args(argv)
@@ -96,7 +132,12 @@ def main(argv=None):
         if args.command == 'devices':
             result = scan_hid()
             if not args.all:
-                result = [d for d in result if re.search(r'evofox|blaze', d['name'], re.I)]
+                result = [d for d in result if is_candidate(d)]
+        elif args.command == 'status':
+            from .status import get_status
+            reply = get_status(args.device, confirmed=args.confirm_blaze)
+            result = {'device': args.device, 'report_id': 7, 'raw_report_hex': reply.hex(' '),
+                      'note': 'Experimental raw GET_FEATURE reply; not a verified interpretation.'}
         else:
             result = inspect_config(args.path)
         print(json.dumps(result, indent=2, ensure_ascii=False))

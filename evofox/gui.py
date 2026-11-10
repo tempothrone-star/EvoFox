@@ -63,10 +63,10 @@ def run():
               wraplength=780).pack(anchor='w', pady=(4, 8))
     device_frame = ttk.Frame(devices_tab)
     device_frame.pack(fill='both', expand=True)
-    device_list = ttk.Treeview(device_frame, columns=('node', 'name', 'vendor', 'product'), show='headings')
-    for name, label, width in [('node', 'Device', 110), ('name', 'Name', 400), ('vendor', 'Vendor ID', 100), ('product', 'Product ID', 100)]:
+    device_list = ttk.Treeview(device_frame, columns=('node', 'name', 'vendor', 'product', 'hint'), show='headings')
+    for name, label, width in [('node', 'Device', 110), ('name', 'Name', 220), ('vendor', 'Vendor ID', 80), ('product', 'Product ID', 80), ('hint', 'Interface hint', 260)]:
         device_list.heading(name, text=label)
-        device_list.column(name, width=width, minwidth=60, stretch=name == 'name')
+        device_list.column(name, width=width, minwidth=60, stretch=name in ('name', 'hint'))
     device_scroll = ttk.Scrollbar(device_frame, orient='vertical', command=device_list.yview)
     device_list.configure(yscrollcommand=device_scroll.set)
     device_list.pack(side='left', fill='both', expand=True)
@@ -76,8 +76,8 @@ def run():
         device_list.delete(*device_list.get_children())
         devices = scan_hid()
         for d in devices:
-            device_list.insert('', 'end', values=(d['node'], d['name'], d['vendor_id'] or '', d['product_id'] or ''))
-        device_status.set(f'{len(devices)} HID interface(s) found. Identification and device control are not yet verified.')
+            device_list.insert('', 'end', values=(d['node'], d['name'], d['vendor_id'] or '', d['product_id'] or '', d['interface_hint']))
+        device_status.set(f'{len(devices)} HID interface(s) found. Hints are not model verification; no device commands are sent.')
     controls = ttk.Frame(devices_tab)
     controls.pack(fill='x', pady=(8, 0))
     ttk.Button(controls, text='Refresh devices', command=refresh_devices).pack(side='left')
