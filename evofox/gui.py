@@ -29,7 +29,7 @@ def parse_polling_choice(value):
 def run():
     try:
         import tkinter as tk
-        from tkinter import filedialog, messagebox, ttk
+        from tkinter import colorchooser, filedialog, messagebox, ttk
     except ImportError:
         print('EvoFox: Tkinter is required for the desktop window. Install your distribution’s python3-tk package.', file=sys.stderr)
         return 1
@@ -386,7 +386,7 @@ def run():
               'No automatic retry, rollback or activation.', wraplength=800, style='Notice.TLabel').pack(anchor='w', pady=4)
 
     ttk.Label(lighting_tab, text='Live lighting preview · experimental', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
-    ttk.Label(lighting_tab, text='Only two fixed live-effect requests are available. Color, brightness, saved lighting settings and macros cannot be configured here.',
+    ttk.Label(lighting_tab, text='Live effect, raw brightness and DPI-stage colour requests are experimental. Saved lighting settings are not supported.',
               wraplength=800).pack(anchor='w', pady=(5, 12))
     light_device_row = ttk.Frame(lighting_tab)
     light_device_row.pack(fill='x')
@@ -398,8 +398,29 @@ def run():
     light_row.pack(fill='x', pady=12)
     ttk.Label(light_row, text='Request:').pack(side='left', padx=(0, 8))
     light_var = tk.StringVar()
-    light_options = {'Light-on effect': 'light-on', 'Light-off effect': 'light-off'}
+    light_options = {'Light-on effect': 'light-on', 'Light-off effect': 'light-off',
+                     'Brightness code': 'brightness', 'DPI-stage colour': 'stage-colour'}
     ttk.Combobox(light_row, state='readonly', textvariable=light_var, values=tuple(light_options), width=20).pack(side='left')
+    light_params = ttk.Frame(lighting_tab)
+    light_params.pack(fill='x', pady=(0, 6))
+    ttk.Label(light_params, text='Brightness code (0–7):').pack(side='left', padx=(0, 6))
+    light_level_var = tk.StringVar()
+    ttk.Combobox(light_params, state='readonly', textvariable=light_level_var,
+                 values=tuple(str(i) for i in range(8)), width=4).pack(side='left')
+    ttk.Label(light_params, text='DPI stage:').pack(side='left', padx=(20, 6))
+    light_stage_var = tk.StringVar()
+    ttk.Combobox(light_params, state='readonly', textvariable=light_stage_var,
+                 values=tuple(str(i) for i in range(1, 7)), width=4).pack(side='left')
+    colour_var = tk.StringVar(value='No colour selected')
+    def choose_colour():
+        _, colour = colorchooser.askcolor(parent=root, title='Choose experimental stage colour')
+        if colour:
+            colour_var.set(colour)
+    ttk.Button(light_params, text='Choose colour…', command=choose_colour).pack(side='left', padx=(20, 6))
+    ttk.Label(light_params, textvariable=colour_var).pack(side='left')
+    ttk.Label(lighting_tab, text='Brightness uses a raw 0–7 code and also requests the light-on effect. '
+              'Colour targets one DPI-stage indicator, not all zones. Neither mapping is verified on this mouse.',
+              wraplength=800).pack(anchor='w', pady=(2, 4))
     light_message = tk.StringVar(value='No request sent. The original lighting state is not read or backed up.')
     ttk.Label(lighting_tab, textvariable=light_message, wraplength=800, justify='left').pack(anchor='w', pady=(8, 0))
 
@@ -408,11 +429,24 @@ def run():
         node = selected_node.get()
         mode = light_options.get(light_var.get())
         if not node or not mode:
-            messagebox.showerror('Choose device and effect', 'Select a candidate interface and one of the two live effects.', parent=root)
+            messagebox.showerror('Choose device and request', 'Select a candidate interface and a lighting request.', parent=root)
             return
+        level = stage = colour = None
+        if mode == 'brightness':
+            if light_level_var.get() not in tuple(str(i) for i in range(8)):
+                messagebox.showerror('Choose brightness', 'Select a raw brightness code from 0 to 7.', parent=root)
+                return
+            level = int(light_level_var.get())
+        elif mode == 'stage-colour':
+            if light_stage_var.get() not in tuple(str(i) for i in range(1, 7)) or not colour_var.get().startswith('#'):
+                messagebox.showerror('Choose stage and colour', 'Choose a DPI stage and a colour first.', parent=root)
+                return
+            stage, colour = int(light_stage_var.get()) - 1, colour_var.get()
+        detail = (f' (raw code {level})' if mode == 'brightness' else
+                  f' (stage {stage + 1}, {colour})' if mode == 'stage-colour' else '')
         if not messagebox.askyesno('Experimental live-lighting request',
-                f"Send a single {light_var.get()} SET_FEATURE request to {node}?\n\n"
-                'Light-on was reported working on one GM862; light-off and behavior on other devices remain unverified. No original lighting backup, readback, or automatic restore is available. '
+                f"Send a single {light_var.get()}{detail} SET_FEATURE request to {node}?\n\n"
+                'Light-on was reported working on one GM862; light-off, brightness, colour and their persistence remain unverified. No original lighting backup, readback, or automatic restore is available. '
                 'It may change lighting unexpectedly or persist. A power cycle restored lighting on another device, but that is not guaranteed here.\n\n'
                 'Confirm this is your EvoFox Blaze GM862, close other mouse tools and keep the mouse connected. Continue?', parent=root):
             return
@@ -427,9 +461,9 @@ def run():
             payload, capture = result
             light_message.set(f"Request sent: {payload.get('mode', 'unknown')}. Physical behavior and persistence are not verified.\n"
                               f"No backup or restore is available. Evidence: {capture}")
-        start_task(lambda: run_operation('lighting', node, light_mode=mode), completed)
+        start_task(lambda: run_operation('lighting', node, light_mode=mode, light_level=level, light_stage=stage, light_colour=colour), completed)
 
-    light_button = ttk.Button(lighting_tab, text='Send live effect…', command=preview_lighting)
+    light_button = ttk.Button(lighting_tab, text='Send live request…', command=preview_lighting)
     light_button.pack(anchor='w', pady=(12, 8))
     operation_buttons.append(light_button)
     ttk.Label(lighting_tab, text='No lighting request is sent at startup. The request requires confirmation and has no automatic retry, reset or rollback.',

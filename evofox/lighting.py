@@ -1,7 +1,8 @@
 """Experimental fixed live-lighting requests, not saved lighting configuration.
 
-Two frames are documented by the independent Aurora Blaze protocol research:
+Fixed frames and the bounded brightness/colour encodings are informed by independent research:
 https://github.com/rugbedbugg/aurora/blob/main/docs/protocol.txt
+https://github.com/Athet-psl/mousekit-gamepro/blob/main/docs/GM500W-PROTOCOL.md
 Nothing runs on import. No backup or restore command is known for live state.
 """
 import argparse
@@ -13,16 +14,40 @@ import sys
 from evofox_blaze.feature_read import Journal, check_host, load_baseline, select_target, validated_handle
 from evofox_blaze.probe import enumerate_devices
 from evofox_blaze.state_read import IDENTITY, SET_FEATURE
-from .polling import BASELINE
+BASELINE = Path(__file__).resolve().parents[1] / "docs/device-captures/2026-10-23-30fa-1440-0100/probe.json"
 
-# Literal frames only; no generic command encoder or arbitrary packet input.
+# Known fixed frames; bounded fields below do not permit arbitrary reports.
 FRAMES = {
     'light-on': bytes.fromhex('07 13 ff a2 0b 04 03 ff'),
     'light-off': bytes.fromhex('07 13 ff 52 0b 03 83 ff'),
 }
 
 
-def preview_once(target, mode, capture, recheck, *, accept_risk=False):
+def build_frame(mode, *, brightness_code=None, stage=None, colour=None):
+    """Bounded experimental frames, not an encoder for arbitrary HID writes.
+
+    Brightness changes only byte 5 of the observed light-on frame. Colour is
+    one candidate DPI-stage colour slot (not a verified lighting zone), using
+    inverted 4-bit RGB values as documented on a related mouse. Neither field
+    has been validated on this specific GM862.
+    """
+    if mode in FRAMES and brightness_code is None and stage is None and colour is None:
+        return FRAMES[mode]
+    if (mode == 'brightness' and type(brightness_code) is int and 0 <= brightness_code <= 7
+            and stage is None and colour is None):
+        frame = bytearray(FRAMES['light-on'])
+        frame[5] = brightness_code
+        return bytes(frame)
+    if (mode == 'stage-colour' and brightness_code is None and type(stage) is int and 0 <= stage < 6
+            and isinstance(colour, str) and len(colour) == 7 and colour.startswith('#')
+            and all(c in '0123456789abcdefABCDEF' for c in colour[1:])):
+        rgb = [int(colour[i:i+2], 16) for i in (1, 3, 5)]
+        red, green, blue = (15 - round(value / 17) for value in rgb)
+        return bytes((7, 0x14, (stage << 5) | green, (red << 4) | blue, 0, 0, 0, 0))
+    raise ValueError('Invalid live-lighting mode or parameters')
+
+
+def preview_once(target, mode, capture, recheck, *, accept_risk=False, brightness_code=None, stage=None, colour=None):
     """Send exactly one fixed live-effect frame after explicit risk opt-in.
 
     No GET, configuration-block write, backup, restore, retries or automatic
@@ -31,12 +56,10 @@ def preview_once(target, mode, capture, recheck, *, accept_risk=False):
     """
     if accept_risk is not True:
         raise ValueError('Explicit live-lighting risk acknowledgement is required')
-    if mode not in FRAMES:
-        raise ValueError('Unsupported live-lighting frame')
+    frame = build_frame(mode, brightness_code=brightness_code, stage=stage, colour=colour)
     check_host()
     if target.identity() != IDENTITY:
         raise ValueError('Live preview requires the exact captured Blaze identity and descriptor')
-    frame = FRAMES[mode]
     capture = Path(capture)
     capture.mkdir(parents=True, exist_ok=False)
     journal = Journal(capture / 'lighting-preview.jsonl')
@@ -73,13 +96,17 @@ def preview_once(target, mode, capture, recheck, *, accept_risk=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode', choices=tuple(FRAMES), required=True)
+    parser.add_argument('--mode', choices=(*FRAMES, 'brightness', 'stage-colour'), required=True)
+    parser.add_argument('--brightness-code', type=int, help='raw code 0..7 for brightness mode; not a measured level')
+    parser.add_argument('--stage', type=int, help='zero-based DPI stage index 0..5 for stage-colour')
+    parser.add_argument('--colour', help='RGB colour as #RRGGBB for stage-colour')
     parser.add_argument('--device', required=True)
     parser.add_argument('--capture', type=Path, required=True)
     parser.add_argument('--accept-live-lighting-risk', action='store_true', required=True,
                         help='authorize a single unverified SET_FEATURE with no backup or automatic restore')
     args = parser.parse_args(argv)
     try:
+        build_frame(args.mode, brightness_code=args.brightness_code, stage=args.stage, colour=args.colour)
         baseline, _ = load_baseline(BASELINE)
         if baseline.identity() != IDENTITY:
             raise ValueError('Baseline differs from the exact captured Blaze')
@@ -87,7 +114,8 @@ def main(argv=None):
         def recheck(selected):
             if select_target(enumerate_devices(), baseline, selected.path) != selected:
                 raise ValueError('Device changed before lighting preview')
-        result = preview_once(target, args.mode, args.capture, recheck, accept_risk=True)
+        result = preview_once(target, args.mode, args.capture, recheck, accept_risk=True,
+                              brightness_code=args.brightness_code, stage=args.stage, colour=args.colour)
         print(json.dumps(result, indent=2))
         return 0
     except (OSError, ValueError, TypeError, KeyError) as exc:

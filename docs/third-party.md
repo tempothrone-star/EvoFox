@@ -15,3 +15,5 @@ are partial, not a complete image. The backend does not retry or automatically
 roll back. The included capture is public third-party evidence, not a capture
 of this user's settings. Source and tests are copied to allow offline builds;
 no code is downloaded or executed at runtime.
+
+The candidate stage-colour packing and inverted-channel interpretation are informed by [Mousekit GamePro](https://github.com/Athet-psl/mousekit-gamepro/blob/main/docs/GM500W-PROTOCOL.md), tested upstream on a different mouse model. Its MIT license and copyright notice are included in `docs/licenses/mousekit-gamepro-MIT.txt`. The fixed Blaze live frames are documented by [Aurora](https://github.com/rugbedbugg/aurora/blob/main/docs/protocol.txt). Neither source validates the new colour/brightness requests on this user’s mouse.
