@@ -2,11 +2,11 @@
 
 `evofox_blaze/`, the tests `test_config_write.py`, `test_state_read.py`,
 `test_feature_read.py` and their fixtures, and the two `docs/device-captures/`
-fixtures are from [Evofox-Blaze-Linux-Port](https://github.com/rahulbeyondcode/Evofox-Blaze-Linux-Port),
+fixtures and the button-related tests are from [Evofox-Blaze-Linux-Port](https://github.com/rahulbeyondcode/Evofox-Blaze-Linux-Port),
 commit `7252a49b5b4f8b595a5aaa55418c99e5826a1d96`. Copyright 2026 R Rahul;
 MIT license included at `evofox_blaze/LICENSE`.
 
-The GUI exposes only its fixed-block polling read/change/restore workflow.
+The GUI exposes the fixed-block polling and native-button read/change/restore workflows.
 The backend matches USB ID, revision, interface and the *entire* report
  descriptor against the captured baseline; it locks the device cooperatively,
 journals operations, backs up the affected eight bytes before a commit and

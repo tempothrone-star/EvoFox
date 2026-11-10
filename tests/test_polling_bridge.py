@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from evofox.polling import build_command, run_operation
+from evofox_blaze.config_write import plan_change
 
 
 class PollingBridgeTests(unittest.TestCase):
@@ -18,11 +19,25 @@ class PollingBridgeTests(unittest.TestCase):
         self.assertNotIn('--accept-activation-risk', write)
         restore = build_command('restore', '/dev/hidraw2', Path('/tmp/capture'), backup=Path('/tmp/original-state.json'))
         self.assertIn('--restore-backup', restore)
+        read_buttons = build_command('button-read', '/dev/hidraw2', Path('/tmp/capture'))
+        self.assertIn('--accept-staged-read-risk', read_buttons)
+        assign = build_command('button-assign', '/dev/hidraw2', Path('/tmp/capture'), slot=4, button_action='back')
+        self.assertIn('4=back', assign)
+        self.assertNotIn('--accept-activation-risk', assign)
+        restore_buttons = build_command('button-restore', '/dev/hidraw2', Path('/tmp/capture'), backup=Path('/tmp/button-backup.json'))
+        self.assertIn('--restore-backup', restore_buttons)
         for kwargs in ({'action':'polling','node':'/dev/hidraw2','rate': True},
                        {'action':'polling','node':'/dev/input/event0','rate': 500},
-                       {'action':'read','node':'/dev/hidraw2','rate': 125}):
+                       {'action':'read','node':'/dev/hidraw2','rate': 125},
+                       {'action':'button-assign','node':'/dev/hidraw2','slot': 9,'button_action':'back'},
+                       {'action':'button-assign','node':'/dev/hidraw2','slot': 4,'button_action':'arbitrary'}):
             with self.assertRaises(ValueError):
                 build_command(capture=Path('/tmp/capture'), **kwargs)
+
+    def test_user_staged_read_produces_no_change_at_1000_hz(self):
+        data = bytes.fromhex('19 3f 32 00 f3 ff 00 00')
+        self.assertEqual(plan_change(data, 'polling', 1000), data)
+        self.assertEqual(plan_change(data, 'polling', 500)[6], 1)
 
     def test_backend_success_and_failure_preserve_evidence_location(self):
         with tempfile.TemporaryDirectory() as tmp, patch('evofox.polling.state_root', return_value=Path(tmp)):

@@ -1,5 +1,6 @@
 """Native, read-only desktop inspector for EvoFox Blaze driver resources."""
 import argparse
+import os
 import queue
 import sys
 import threading
@@ -29,6 +30,7 @@ def run():
     from .__main__ import inspect_config, scan_hid
     from .status import get_status, interpret_status
     from .polling import run_operation
+    from evofox_blaze.buttons import ACTION_CODES, ACTION_LABELS, BLOCK_SLOTS
 
     parser = argparse.ArgumentParser(description='EvoFox Blaze read-only desktop inspector')
     parser.add_argument('config', nargs='?', type=Path, help='extracted vendor config.ini')
@@ -52,15 +54,21 @@ def run():
     outer.pack(fill='both', expand=True)
     ttk.Label(outer, text='EvoFox Blaze', style='Title.TLabel').pack(anchor='w')
     ttk.Label(outer, text='Linux desktop · experimental polling control').pack(anchor='w', pady=(2, 8))
-    ttk.Label(outer, text='Experimental polling control is available. Lighting, buttons and macros are not implemented.',
+    ttk.Label(outer, text='Polling and basic button controls are experimental. Lighting and macros are not implemented.',
               style='Notice.TLabel', wraplength=860).pack(anchor='w', pady=(0, 12))
+
+    if os.geteuid() == 0:
+        ttk.Label(outer, text='Running as root: evidence will be saved under /root. Prefer running as your normal user; see README for device permissions.',
+                  style='Notice.TLabel', wraplength=860).pack(anchor='w', pady=(0, 8))
 
     tabs = ttk.Notebook(outer)
     tabs.pack(fill='both', expand=True)
     devices_tab = ttk.Frame(tabs, padding=12)
     config_tab = ttk.Frame(tabs, padding=12)
     performance_tab = ttk.Frame(tabs, padding=12)
+    buttons_tab = ttk.Frame(tabs, padding=12)
     tabs.add(devices_tab, text='Devices')
+    tabs.add(buttons_tab, text='Buttons')
     tabs.add(performance_tab, text='Performance')
     tabs.add(config_tab, text='Configuration file')
 
@@ -119,6 +127,7 @@ def run():
             device_list.insert('', 'end', values=(d['node'], d['name'], d['vendor_id'] or '', d['product_id'] or '', d['interface_hint']))
         candidates = [d['node'] for d in devices if d['interface_hint'] == 'candidate feature-report interface']
         candidate_box['values'] = candidates
+        button_device_box['values'] = candidates
         if selected_node.get() not in candidates:
             selected_node.set(candidates[0] if len(candidates) == 1 else '')
         device_status.set(f'{len(devices)} HID interface(s) found. Hints are not model verification.')
@@ -231,6 +240,97 @@ def run():
     ttk.Label(performance_tab, text='All device operations require confirmation. Staged reads also send SET_FEATURE. A backup covers one 8-byte block, not the whole mouse. '
               'No automatic retry or rollback. Activation may require reconnecting the mouse.', wraplength=780,
               style='Notice.TLabel').pack(anchor='w', pady=8)
+
+    ttk.Label(buttons_tab, text='Native button assignments · experimental', font=('TkDefaultFont', 11, 'bold')).pack(anchor='w')
+    ttk.Label(buttons_tab, text='Read the mouse first. Slot numbers and vendor UI positions are candidates, not verified physical button locations. '
+              'Slot 9 is unsupported; macros and shortcut records are not editable.', wraplength=800).pack(anchor='w', pady=(4, 8))
+    button_device_row = ttk.Frame(buttons_tab)
+    button_device_row.pack(fill='x')
+    ttk.Label(button_device_row, text='Feature interface:').pack(side='left', padx=(0, 8))
+    button_device_box = ttk.Combobox(button_device_row, state='readonly', textvariable=selected_node, width=22)
+    button_device_box.pack(side='left')
+    ttk.Label(button_device_row, text='Shared with Performance tab.').pack(side='left', padx=10)
+    button_table = ttk.Treeview(buttons_tab, columns=('slot', 'ui', 'raw', 'candidate'), show='headings', height=7, selectmode='browse')
+    for column, label, width in [('slot', 'Native slot', 90), ('ui', 'Vendor UI position', 160), ('raw', 'Raw', 80), ('candidate', 'Candidate action', 250)]:
+        button_table.heading(column, text=label)
+        button_table.column(column, width=width, minwidth=60)
+    button_table.pack(fill='both', expand=True, pady=(8, 0))
+    assign_row = ttk.Frame(buttons_tab)
+    assign_row.pack(fill='x', pady=(8, 0))
+    ttk.Label(assign_row, text='New action:').pack(side='left', padx=(0, 8))
+    action_var = tk.StringVar()
+    action_names = {ACTION_LABELS[key]: key for key in ACTION_CODES}
+    ttk.Combobox(assign_row, state='readonly', textvariable=action_var,
+                 values=tuple(action_names), width=20).pack(side='left')
+    button_message = tk.StringVar(value='Not read. No button settings are shown or changed at startup.')
+    ttk.Label(buttons_tab, textvariable=button_message, wraplength=800, justify='left').pack(anchor='w', pady=(8, 0))
+    button_controls = ttk.Frame(buttons_tab)
+    button_controls.pack(anchor='w', pady=8)
+    last_button_read_node = None
+
+    def perform_button(action):
+        nonlocal last_button_read_node
+        node = selected_node.get()
+        if not node:
+            messagebox.showerror('Select an interface', 'Refresh devices and select a candidate feature interface.', parent=root)
+            return
+        backup = None
+        slot = None
+        new_action = None
+        if action == 'button-assign':
+            selection = button_table.selection()
+            if last_button_read_node != node or len(selection) != 1:
+                messagebox.showerror('Read and select a slot', 'Read this interface first, then select one supported native slot.', parent=root)
+                return
+            slot = int(button_table.item(selection[0], 'values')[0])
+            if slot not in BLOCK_SLOTS or action_var.get() not in action_names:
+                messagebox.showerror('Unsupported assignment', 'Select a supported slot and an action.', parent=root)
+                return
+            new_action = action_names[action_var.get()]
+        elif action == 'button-restore':
+            path = filedialog.askopenfilename(parent=root, title='Select button-backup.json',
+                                              filetypes=[('JSON backup', '*.json'), ('All files', '*')])
+            if not path:
+                return
+            backup = Path(path)
+        warnings = {
+            'button-read': 'This staged read sends SET_FEATURE and GET_FEATURE requests. Effects are experimental.',
+            'button-assign': f'This commits native slot {slot} to {action_var.get()}. Physical button mapping is not verified. An eight-byte partial backup and readback will be made; recovery is not guaranteed.',
+            'button-restore': 'This restores a partial button-block backup and refuses intervening edits. Recovery is not guaranteed.'
+        }
+        if not messagebox.askyesno('Experimental button operation',
+                f"{warnings[action]}\n\nConfirm {node} is your EvoFox Blaze GM862. Close other mouse tools and do not unplug during the operation. Continue?", parent=root):
+            return
+        button_message.set(f'Working on {node}. Keep the mouse connected…')
+        def completed(result, error):
+            nonlocal last_button_read_node
+            last_button_read_node = None
+            if error:
+                button_message.set('Operation failed. State may be uncertain. Do not retry blindly; inspect the evidence.')
+                messagebox.showerror('Button operation failed', error, parent=root)
+                return
+            payload, capture = result
+            if action == 'button-read':
+                button_table.delete(*button_table.get_children())
+                for row in payload.get('button_slots', []):
+                    candidate = row.get('action_candidate')
+                    button_table.insert('', 'end', values=(row['slot'], row.get('vendor_ui_button') or '—',
+                        row.get('raw_hex', ''), ACTION_LABELS.get(candidate, 'Unknown / extension')))
+                last_button_read_node = node
+                button_message.set(f"Read block: {payload.get('collected_hex', 'unknown')}. Candidate labels are not verified.\nEvidence: {capture}")
+            else:
+                text = f"Outcome: {payload.get('outcome', 'unknown')}. Readback does not establish physical behavior; reconnecting may be required."
+                if payload.get('backup_file'):
+                    text += f"\nPartial button backup: {capture / payload['backup_file']}"
+                button_message.set(text + f'\nEvidence: {capture}\nRead again before another change.')
+        start_task(lambda: run_operation(action, node, backup=backup, slot=slot, button_action=new_action), completed)
+
+    for label, action in [('Read buttons…', 'button-read'), ('Apply selected…', 'button-assign'), ('Restore button backup…', 'button-restore')]:
+        button = ttk.Button(button_controls, text=label, command=lambda a=action: perform_button(a))
+        button.pack(side='left', padx=(0, 8))
+        operation_buttons.append(button)
+    ttk.Label(buttons_tab, text='All operations require confirmation. Reads send SET_FEATURE staging. Backups cover one 8-byte block only. '
+              'No automatic retry, rollback or activation.', wraplength=800, style='Notice.TLabel').pack(anchor='w', pady=4)
 
     cfg_path = tk.StringVar(value='No configuration file loaded')
     cfg_section = tk.StringVar()

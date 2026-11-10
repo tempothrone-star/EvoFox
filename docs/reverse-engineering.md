@@ -30,3 +30,7 @@ The user-supplied full report descriptors for interfaces 00 and 01 match byte-fo
 The user ran the probe on a confirmed EvoFox Blaze GM862, USB revision `0100`, and returned `07 00 66 09 49 00 03 7b`. This demonstrates a successful GET_FEATURE response, not that any particular decoded value or write protocol is correct. Based on Aurora, the last two bytes *suggest* 1000 Hz polling, profile index 0 and lighting effect code 7; compare with independently observed settings before relying on that interpretation.
 
 The supplied installer was extracted locally with innoextract. Its 132 files, including the Windows executable and skin/configuration resources, are in the ignored `extracted/` directory; `./extract-evofox` lets other users reproduce this locally. The executable is a Windows binary, not recovered source. The desktop can load the extracted config, while its experimental polling backend is adapted from the separately attributed project rather than automatically generated from the binary.
+
+## User staged state read
+
+The user successfully ran the staged base-0018 read and supplied a screenshot showing `19 3f 32 00 f3 ff 00 00`. The candidate polling code is 0 (1000 Hz), and DPI stage index is 1; neither frequency nor behavior was measured. The screenshot showed evidence under `/root/.local/state`, indicating the GUI was likely launched as root. Prefer running the GUI as the normal user with temporary access only to the identified hidraw interface. No setting change is demonstrated by this read.
