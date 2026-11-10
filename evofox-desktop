@@ -1,0 +1,4 @@
+#!/bin/sh
+# Launch from any working directory, without installing the package.
+cd "$(dirname "$0")" || exit 1
+exec python3 -m evofox.gui "$@"
