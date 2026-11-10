@@ -134,10 +134,11 @@ def main(argv=None):
             if not args.all:
                 result = [d for d in result if is_candidate(d)]
         elif args.command == 'status':
-            from .status import get_status
+            from .status import get_status, interpret_status
             reply = get_status(args.device, confirmed=args.confirm_blaze)
             result = {'device': args.device, 'report_id': 7, 'raw_report_hex': reply.hex(' '),
-                      'note': 'Experimental raw GET_FEATURE reply; not a verified interpretation.'}
+                      'tentative': interpret_status(reply),
+                      'note': 'Provisional decoding from external protocol research; reply may be stale or not status.'}
         else:
             result = inspect_config(args.path)
         print(json.dumps(result, indent=2, ensure_ascii=False))

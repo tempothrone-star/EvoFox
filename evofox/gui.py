@@ -1,6 +1,8 @@
 """Native, read-only desktop inspector for EvoFox Blaze driver resources."""
 import argparse
+import queue
 import sys
+import threading
 from pathlib import Path
 
 
@@ -25,6 +27,7 @@ def run():
         return 1
 
     from .__main__ import inspect_config, scan_hid
+    from .status import get_status, interpret_status
 
     parser = argparse.ArgumentParser(description='EvoFox Blaze read-only desktop inspector')
     parser.add_argument('config', nargs='?', type=Path, help='extracted vendor config.ini')
@@ -77,11 +80,57 @@ def run():
         devices = scan_hid()
         for d in devices:
             device_list.insert('', 'end', values=(d['node'], d['name'], d['vendor_id'] or '', d['product_id'] or '', d['interface_hint']))
-        device_status.set(f'{len(devices)} HID interface(s) found. Hints are not model verification; no device commands are sent.')
+        device_status.set(f'{len(devices)} HID interface(s) found. Hints are not model verification.')
     controls = ttk.Frame(devices_tab)
     controls.pack(fill='x', pady=(8, 0))
     ttk.Button(controls, text='Refresh devices', command=refresh_devices).pack(side='left')
-    ttk.Label(controls, textvariable=device_status, wraplength=650).pack(side='left', padx=10)
+    ttk.Label(controls, textvariable=device_status, wraplength=500).pack(side='left', padx=10)
+    status_line = tk.StringVar(value='Select the candidate feature-report interface to request status.')
+    ttk.Label(devices_tab, textvariable=status_line, wraplength=780, justify='left').pack(anchor='w', pady=(8, 0))
+
+    def request_status():
+        selected = device_list.selection()
+        if len(selected) != 1:
+            messagebox.showinfo('Select an interface', 'Select one candidate feature-report interface first.', parent=root)
+            return
+        node, _, _, _, hint = device_list.item(selected[0], 'values')
+        if hint != 'candidate feature-report interface':
+            messagebox.showerror('Wrong interface', 'Select the candidate feature-report interface.', parent=root)
+            return
+        if not messagebox.askyesno('Experimental status request',
+                f'Confirm that {node} belongs to your EvoFox Blaze. Close other mouse configuration tools first.\n\n'
+                'Send one GET_FEATURE request? No settings writes will be sent.', parent=root):
+            return
+        status_button.state(['disabled'])
+        status_line.set(f'Requesting status from {node}…')
+        result_queue = queue.Queue(maxsize=1)
+        def worker():
+            try:
+                result_queue.put((get_status(node, confirmed=True), None))
+            except (OSError, ValueError) as exc:
+                result_queue.put((None, str(exc)))
+        def poll_result():
+            try:
+                reply, error = result_queue.get_nowait()
+            except queue.Empty:
+                root.after(100, poll_result)
+                return
+            status_button.state(['!disabled'])
+            if error:
+                status_line.set(f'Status request failed: {error}. See README for permissions.')
+                return
+            tentative = interpret_status(reply)
+            text = f'{node} · raw report: {reply.hex(" ")}'
+            if tentative is None:
+                text += '\nReply does not match the known status pattern; no decoding is available.'
+            else:
+                text += (f"\nProvisional: {tentative['polling_hz']} Hz polling · "
+                         f"profile index {tentative['profile_index']} · lighting code {tentative['lighting_effect_code']}")
+            status_line.set(text + '\nInterpretation is unverified and the reply may be stale.')
+        threading.Thread(target=worker, daemon=True).start()
+        root.after(100, poll_result)
+    status_button = ttk.Button(controls, text='Read status…', command=request_status)
+    status_button.pack(side='right')
 
     cfg_path = tk.StringVar(value='No configuration file loaded')
     cfg_section = tk.StringVar()

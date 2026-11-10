@@ -27,6 +27,23 @@ HIDIOCGRDESC = ioc(2, 0x02, 4 + MAX_DESCRIPTOR_SIZE)
 HIDIOCGFEATURE = ioc(3, 0x07, REPORT_SIZE)
 
 
+def interpret_status(reply):
+    """Provisional decoding from Aurora's notes, not verified on this mouse.
+
+    A GET may return data from an ongoing transaction rather than live status.
+    Only attempt decoding when observed status marker bytes and reserved bits
+    match. Unknown polling codes or unrecognized replies remain undecoded.
+    """
+    if (len(reply) != REPORT_SIZE or reply[0] != 7 or reply[3] != 9
+            or reply[5] != 0 or (reply[6] & 0x13) != 0x03):
+        return None
+    polling = {0: 1000, 1: 500, 3: 250, 7: 125}.get(reply[6] >> 5)
+    if polling is None:
+        return None
+    return {'polling_hz': polling, 'profile_index': (reply[6] >> 2) & 3,
+            'lighting_effect_code': reply[7] >> 4}
+
+
 def get_status(node, *, confirmed=False):
     """Issue exactly one GET_FEATURE only after checking the open device.
 

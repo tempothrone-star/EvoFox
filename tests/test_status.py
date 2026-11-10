@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from evofox.__main__ import FEATURE_COLLECTION
 from evofox.status import (HIDIOCGFEATURE, HIDIOCGRAWINFO, HIDIOCGRDESC,
-                           HIDIOCGRDESCSIZE, get_status)
+                           HIDIOCGRDESCSIZE, get_status, interpret_status)
 
 
 class StatusTests(unittest.TestCase):
@@ -70,6 +70,23 @@ class StatusTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_status('/dev/hidraw2', confirmed=True)
         self.close.assert_called_once_with(42)
+
+    def test_report_from_user_provisional_decoding(self):
+        self.assertEqual(interpret_status(bytes.fromhex('07 00 66 09 49 00 03 7b')),
+                         {'polling_hz': 1000, 'profile_index': 0, 'lighting_effect_code': 7})
+
+    def test_status_decoding_rejects_unknown_formats(self):
+        self.assertIsNone(interpret_status(b''))
+        self.assertIsNone(interpret_status(bytes.fromhex('07 00 66 08 49 00 03 7b')))
+        self.assertIsNone(interpret_status(bytes.fromhex('07 00 66 09 49 00 43 7b')))
+        self.assertIsNone(interpret_status(bytes.fromhex('07 00 66 09 49 00 13 7b')))
+
+    def test_known_polling_codes(self):
+        for raw, hz in [(0x03, 1000), (0x23, 500), (0x63, 250), (0xe3, 125)]:
+            with self.subTest(raw=raw):
+                reply = bytes([7, 0, 0, 9, 0, 0, raw | 0x0c, 0])
+                self.assertEqual(interpret_status(reply)['polling_hz'], hz)
+                self.assertEqual(interpret_status(reply)['profile_index'], 3)
 
     def test_regular_file_rejected(self):
         self.fstat.return_value.st_mode = stat.S_IFREG

@@ -12,7 +12,7 @@ Install Python 3 and Tkinter (for example, `sudo apt install python3 python3-tk`
 ./evofox-desktop
 ```
 
-Use **Refresh devices** to list HID interfaces. To inspect the vendor settings, extract the installer as described below and choose **Open config.ini…** in the Configuration file tab, or launch `./evofox-desktop extracted/app/skins/config/config.ini`. This window cannot apply settings to the mouse.
+Use **Refresh devices** to list HID interfaces. You can select the candidate feature-report interface and use **Read status…** to send an optional experimental GET_FEATURE request after confirmation (see the precautions below). To inspect the vendor settings, extract the installer as described below and choose **Open config.ini…** in the Configuration file tab, or launch `./evofox-desktop extracted/app/skins/config/config.ini`. This window cannot apply settings to the mouse.
 
 ## Command-line inspection
 
@@ -29,7 +29,7 @@ The Devices tab labels a USB `30fa:1440` interface as a candidate feature-report
 
 ## Experimental device status probe
 
-The optional `status` command is separate from the offline inspector. It opens a selected hidraw node **read-only** and sends exactly one HID GET_FEATURE request (report ID 7); it does not send SET_FEATURE or change settings. A GET still communicates with the mouse and can disturb an ongoing configuration exchange, so close the Windows utility, Wine, and other mouse configuration tools first. Only run it if you have confirmed your mouse is an EvoFox Blaze; other devices share the USB ID. The reply is displayed as raw hex, not interpreted as verified settings.
+The optional `status` command is separate from the offline inspector. It opens a selected hidraw node **read-only** and sends exactly one HID GET_FEATURE request (report ID 7); it does not send SET_FEATURE or change settings. A GET still communicates with the mouse and can disturb an ongoing configuration exchange, so close the Windows utility, Wine, and other mouse configuration tools first. Only run it if you have confirmed your mouse is an EvoFox Blaze; other devices share the USB ID. The raw reply is displayed alongside a provisional interpretation of polling rate, profile index and lighting effect code when it matches the expected pattern. This interpretation is not verified and a reply can be stale.
 
 Find the current candidate interface using `python3 -m evofox devices` and replace `N` with its number (the number can change after reconnecting):
 
@@ -37,7 +37,7 @@ Find the current candidate interface using `python3 -m evofox devices` and repla
 python3 -m evofox status --device /dev/hidrawN --confirm-blaze
 ```
 
-The tool validates the opened character device's USB ID and report descriptor before sending the request, and rejects malformed replies. Linux may deny access to the node. If so, you can temporarily grant your user read access to **that confirmed node only**, for example with `sudo setfacl -m u:$(id -un):r /dev/hidrawN` (requires `setfacl`). The permission usually disappears on disconnect. Do not grant access to unrelated HID devices. This probe has mock tests but has not been tested on the user's physical mouse, and the protocol could differ by firmware.
+The tool validates the opened character device's USB ID and report descriptor before sending the request, and rejects malformed replies. Linux may deny access to the node. If so, you can temporarily grant your user read access to **that confirmed node only**, for example with `sudo setfacl -m u:$(id -un):r /dev/hidrawN` (requires `setfacl`). The permission usually disappears on disconnect. Do not grant access to unrelated HID devices. A single raw status request succeeded on the user's physical mouse; the meaning of the fields has not been verified on that mouse, and the protocol could differ by firmware.
 
 ## Extracting the installer
 
